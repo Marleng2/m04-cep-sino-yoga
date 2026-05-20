@@ -1,0 +1,314 @@
+---
+title: "MSDM CEP: Sino Yoga"
+subtitle: "Proposal Presentation"
+author: "Marlen Garcia"
+institute: "IBM 6400, Cal Poly Pomona"
+date: today
+format: 
+  revealjs:
+    theme: sky
+    width: 1600
+    height: 900
+    footer: Sino Yoga
+    transition: slide
+    transition-speed: default
+    incremental: false
+    toc: true
+    toc-depth: 1
+    slide-number: true
+    scrollable: true
+    smaller: true
+    code-fold: false
+    code-overflow: wrap
+    number-sections: false
+    number-depth: 5
+    embed-resources: true
+    css: styles.css
+editor: visual
+execute: 
+  echo: true
+  freeze: auto
+  warning: false
+  message: false
+---
+
+# Introduction
+
+## Project Background
+
+Sino Yoga is a yoga and wellness brand built around **Five-Element Meridian Yoga**. It integrates Traditional Chinese Medicine concepts with yoga practice.
+
+-   Core brand promise: holistic healing for mind, body, and energy.
+
+-   Digital growth is centered on YouTube content.
+
+-   The channel has an established base, but engagement must become more consistent.
+
+    ![](images/Screenshot%202026-04-10%20151956-01.png)
+
+## Problem Statement
+
+Sino Yoga has valuable content, but the channel shows signs of **inconsistent audience engagement**: an early visibility spike, lower ongoing interaction, and uneven performance across videos
+
+## Analytics Objective
+
+-   Evaluate viewer commitment on Sino Yoga’s YouTube channel.
+-   Identify top-performing content formats and themes.
+-   Translate performance patterns into a data-driven content strategy.
+
+## Importance
+
+The channel can attract attention, but audience engagement must be strengthened so viewers return, interact, and follow a structured content journey.
+
+**Outcome expected**
+
+-   Stronger retention and repeat viewing.
+-   Clearer content pillars.
+-   Playlists and series that move viewers from passive watching to active participation.
+
+# Literature Review
+
+## Existence of well-established consumer behavior theory/models
+
+-   **Customer engagement theory** - treats engagement as a multidimensional relationship between consumer and brand, not just a click or view [@brodie2011].\
+-   **Social media engagement theory** - emphasizes cognitive, emotional, and behavioral engagement in digital environments [@digangi2016].\
+-   **Branded YouTube content strategy** - suggests that content planning should consider platform behavior, publishing consistency, and audience value [@wang2020].\
+-   **Customer journey thinking** - helps position engagement as the middle stage between discovery and later conversion [@lemon2016].
+
+## Assessment of adequateness of gathered data
+
+1.  The data is adequate for **descriptive analytics**: which months and videos performed best.
+2.  The data is partly adequate for **diagnostic analytics**: engagement rates can flag where reach did not become interaction.
+3.  The data is not fully adequate for **predictive analytics** without viewer-level variables, retention curves, and survey responses.
+
+## Need for additional analysis
+
+**Add platform data**
+
+-   Retention curves
+-   Average percentage viewed by video type
+-   Returning-viewer behavior
+-   Comment sentiment
+
+**Add audience data**
+
+-   Survey content preferences
+-   Yoga experience level
+-   Motivation for watching
+-   Preferred video length and format
+
+# Methods
+
+```{r}
+#| label: setup
+#| include: false
+
+library(tidyverse)
+library(readxl)
+library(janitor)
+library(lubridate)
+library(scales)
+library(gt)
+library(plotly)
+library(glue)
+
+monthly_raw <- read_excel("Sino Yoga monthy data.xlsx", sheet = "monthy data") |> 
+  clean_names()
+
+videos_raw <- read_excel("lifetime download with translations.xlsx", sheet = "Table data") |> 
+  clean_names()
+
+monthly <- monthly_raw |>
+  mutate(
+    month = ym(date),
+    across(
+      any_of(c(
+        "subscribers", "videos_added", "videos_published", "impressions",
+        "new_viewers", "returning_viewers", "likes", "dislikes", "shares",
+        "comments_added", "views", "watch_time_hours", "estimated_revenue_usd"
+      )),
+      as.numeric
+    ),
+    engagement_actions = replace_na(likes, 0) + replace_na(shares, 0) + replace_na(comments_added, 0),
+    engagement_rate = engagement_actions / views,
+    returning_viewer_share = returning_viewers / (new_viewers + returning_viewers),
+    avg_view_duration_min = period_to_seconds(hms(average_view_duration)) / 60
+  ) |>
+  arrange(month)
+
+videos <- videos_raw |>
+  filter(!str_detect(str_to_upper(coalesce(video_title_2, "")), "TOTAL")) |>
+  mutate(
+    across(
+      any_of(c(
+        "views", "likes", "shares", "subscribers", "watch_time_hours",
+        "impressions", "engaged_views", "average_percentage_viewed_percent",
+        "impressions_click_through_rate_percent", "estimated_revenue_usd"
+      )),
+      as.numeric
+    ),
+    publish_date = parse_date_time(
+      video_publish_time,
+      orders = c(
+        "Ymd HMS", "Ymd HM", "Ymd",
+        "ymd HMS", "ymd HM", "ymd",
+        "mdY HMS", "mdY HM", "mdY",
+        "mdy HMS", "mdy HM", "mdy",
+        "B d, Y", "b d, Y"
+      )
+    ) |> as.Date(),
+    engagement_rate = (replace_na(likes, 0) + replace_na(shares, 0)) / views,
+    title_short = str_trunc(video_title, 70)
+  ) |>
+  filter(!is.na(views), views > 0)
+
+n_months <- nrow(monthly)
+n_videos <- nrow(videos)
+total_views <- sum(monthly$views, na.rm = TRUE)
+total_likes <- sum(monthly$likes, na.rm = TRUE)
+total_shares <- sum(monthly$shares, na.rm = TRUE)
+total_comments <- sum(monthly$comments_added, na.rm = TRUE)
+
+top_video <- videos |> 
+  slice_max(views, n = 1, with_ties = FALSE)
+
+top_video_share <- top_video$views / sum(videos$views, na.rm = TRUE)
+
+avg_monthly_engagement <- mean(monthly$engagement_rate, na.rm = TRUE)
+
+monthly_long <- monthly |>
+  select(month, likes, shares, comments_added, subscribers) |>
+  pivot_longer(-month, names_to = "metric", values_to = "value") |>
+  mutate(
+    metric = recode(
+      metric,
+      comments_added = "Comments",
+      likes = "Likes",
+      shares = "Shares",
+      subscribers = "Subscribers"
+    )
+  )
+
+top_videos <- videos |>
+  arrange(desc(views)) |>
+  slice_head(n = 10) |>
+  mutate(rank = row_number())
+```
+
+## Data wrangling
+
+```{r}
+#| label: wrangling-code
+#| echo: true
+#| results: hide
+monthly <- read_excel("Sino Yoga monthy data.xlsx", sheet = "monthy data") |>
+  clean_names() |>
+  mutate(
+    month = ym(date),
+    engagement_actions = likes + shares + comments_added,
+    engagement_rate = engagement_actions / views,
+    returning_viewer_share = returning_viewers / (new_viewers + returning_viewers)
+  ) |>
+  arrange(month)
+
+videos <- read_excel("lifetime download with translations.xlsx", sheet = "Table data") |>
+  clean_names() |>
+  filter(!str_detect(str_to_upper(coalesce(video_title_2, "")), "TOTAL")) |>
+  mutate(
+    engagement_rate = (replace_na(likes, 0) + replace_na(shares, 0)) / views,
+    title_short = str_trunc(video_title, 70)
+  ) |>
+  filter(!is.na(views), views > 0)
+```
+
+## Sample characteristics
+
+**Monthly sample**
+
+-   Unit of analysis: month
+-   Period covered: `r format(min(monthly$month), "%b %Y")` to `r format(max(monthly$month), "%b %Y")`
+-   Sample size: `r n_months` monthly observations
+
+**Video sample**
+
+-   Unit of analysis: YouTube video
+-   Sample size: `r n_videos` non-total videos
+-   Used for top-video and engagement-rate analysis
+
+## Measures
+
+| Construct | Operational Measure | Role in AO2 |
+|----|---:|----|
+| Reach | Views, impressions | Shows exposure |
+| Engagement actions | Likes + shares + comments | Captures active response |
+| Engagement rate | Engagement actions / views | Normalizes interaction quality |
+| Retention proxy | Average view duration, average % viewed | Indicates viewer commitment |
+| Loyalty proxy | Returning viewer share, subscribers gained | Indicates repeat connection |
+
+## Analytics methods
+
+-   **Descriptive analytics:** summarize monthly views, engagement actions, engagement rate, watch time, and subscriber growth.
+-   **Top-content analysis:** rank videos by views and compare reach with likes/shares.
+-   **Engagement quality analysis:** compare engagement rate and average percentage viewed to identify content that performs beyond reach.
+-   **Future predictive plan:** use regression or clustering when survey data and retention curves are available.
+
+## Preliminary Results
+
+Monthly Engagement Story
+
+```{r}
+#| label: monthly-plot
+#| fig-height: 4.6
+#| fig-width: 9.5
+monthly_plot <- ggplot(monthly, aes(x = month)) +
+  geom_line(aes(y = views, text = glue("Month: {format(month, '%b %Y')}<br>Views: {comma(views)}")),
+            linewidth = 1.2, color = "#7A36B1") +
+  geom_point(aes(y = views, text = glue("Month: {format(month, '%b %Y')}<br>Views: {comma(views)}")),
+             size = 2.8, color = "#7A36B1") +
+  scale_y_continuous(labels = comma) +
+  scale_x_date(date_labels = "%b\n%Y", date_breaks = "1 month") +
+  labs(
+    title = "Monthly views show an early spike followed by softer performance",
+    subtitle = "AO2 takeaway: content planning should focus on repeatable engagement, not one-time reach spikes.",
+    x = NULL, y = "Views"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(plot.title = element_text(face = "bold"), axis.text.x = element_text(angle = 0))
+
+ggplotly(monthly_plot, tooltip = "text")
+```
+
+Top Performing Videos
+
+```{r}
+#| label: top-table
+top_videos |>
+  transmute(
+    Rank = rank,
+    `Video title` = title_short,
+    Views = views,
+    Likes = likes,
+    Shares = shares,
+    `Engagement rate` = engagement_rate,
+    `Avg. % viewed` = average_percentage_viewed_percent
+  ) |>
+  gt() |>
+  fmt_number(columns = c(Views, Likes, Shares), decimals = 0) |>
+  fmt_percent(columns = `Engagement rate`, decimals = 1) |>
+  fmt_number(columns = `Avg. % viewed`, decimals = 1) |>
+  tab_header(
+    title = md("**Top 10 videos by views**"),
+    subtitle = "Reach leaders for AO2 content planning"
+  ) |>
+  tab_options(table.width = pct(100))
+```
+
+# References
+
+Brodie, R. J., Hollebeek, L. D., Jurić, B., & Ilić, A. (2011). Customer Engagement: Conceptual Domain, Fundamental Propositions, and Implications for Research. Journal of Service Research : JSR, 14(3), 252–271.
+
+Di Gangi, P. M., & Wasko, M. M. (2016). Social media engagement theory: Exploring cognitive, emotional, and behavioral engagement in digital environments. Journal of Information Systems, 30(3), 81–103.
+
+Lemon, K. N., & Verhoef, P. C. (2016). Understanding customer experience throughout the customer journey. Journal of Marketing, 80(6), 69–96.
+
+Wang, R., & Chan-Olmsted, S. (2020). Brand engagement on YouTube: Examining content, personality, and motivations. Journal of Media Business Studies.
